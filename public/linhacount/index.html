@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101215" />
+  <title>Controle de produção — Contagem de tecidos</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="mobile.css" />
+  <link rel="stylesheet" href="brand.css?v=16" />
+  <link rel="stylesheet" href="tracker.css?v=15" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="logo"><img src="logo-marca.jpg" alt="Logo da empresa" width="1082" height="976" /></div></div>
+    <div class="header-context"><span>VISÃO COMPUTACIONAL</span><strong>Controle de produção</strong></div>
+    <div id="systemBadge" class="badge"><i></i><span>Sistema em espera</span></div>
+  </header>
+
+  <main class="workspace">
+    <section class="camera-card card">
+      <div class="card-head">
+        <div><span class="eyebrow">01 / MONITORAMENTO</span><h1>Monitor da operação</h1><p>Captura, passagem e contagem em um só painel.</p></div>
+        <div class="source-controls">
+          <select id="cameraSelect" aria-label="Selecionar câmera"><option value="">Câmera padrão</option></select>
+          <button id="fileButton" class="button secondary" type="button">Testar vídeo</button>
+          <input id="fileInput" type="file" accept="video/*" hidden />
+          <button id="flipCameraButton" class="button secondary camera-flip" type="button" hidden>Trocar câmera</button>
+          <button id="cameraButton" class="button primary" type="button">Conectar câmera</button>
+        </div>
+      </div>
+
+      <div id="stage" class="stage">
+        <video id="video" autoplay muted playsinline></video>
+        <div id="emptyState" class="empty-state">
+          <div class="camera-icon" aria-hidden="true"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 5l1.5-2h5L16 5h4v15H4V5z"/><circle cx="12" cy="12" r="4"/></svg></div><span class="empty-kicker">FONTE DE IMAGEM DESCONECTADA</span><strong>Aguardando imagem</strong>
+          <p>Conecte a câmera para acompanhar a operação ou carregue um vídeo para testar a leitura.</p>
+        </div>
+        <div id="analysisArea" class="analysis-area">
+          <div id="searchBand" class="search-band" title="Área efetivamente analisada: a borda deve percorrer esta faixa">
+            <span class="area-label">Área de análise</span>
+            <b class="corner c1"></b><b class="corner c2"></b><b class="corner c3"></b><b class="corner c4"></b>
+          </div>
+          <div id="countLine" class="count-line"><span>INÍCIO DA CONFIRMAÇÃO</span></div>
+          <div id="trackerBox" class="tracker-box"><span id="trackerLabel">MOVIMENTO #001</span><i id="trackerPoint"></i></div>
+        </div>
+        <div id="countFlash" class="count-flash">+1 passagem</div>
+        <div class="stage-hud"><span id="fpsLabel">0 fps</span><span id="motionLabel">Movimento 0%</span></div>
+        <canvas id="analysisCanvas" width="240" height="135" hidden></canvas>
+      </div>
+
+      <div class="statusbar"><div><i id="statusDot"></i><span id="statusText">Pronto para conectar a câmera</span></div><span>Processamento 100% local · nenhuma imagem enviada</span></div>
+      <p id="frameWarning" hidden style="padding:12px;color:#ffd36a" role="status">Leitura abaixo de 12 quadros/s: podem ocorrer perdas. Mantenha esta aba visível, o aparelho desbloqueado e confira a conexão da câmera.</p>
+    </section>
+
+    <aside class="sidebar">
+      <section class="counter-card card">
+        <span class="eyebrow">02 / PRODUÇÃO</span>
+        <div class="counter-top"><div><label>Saídas da máquina · fluxo</label><output id="countValue">000</output><span class="counter-unit">soma assim que a peça cruza a linha</span></div><div id="confidenceRing" class="confidence-ring" title="Qualidade do sinal">—</div></div>
+        <div class="classification-totals"><div><span>Peças boas</span><strong id="goodValue">0</strong></div><div><span>Resíduos</span><strong id="residueValue">0</strong></div></div>
+        <button id="residueButton" class="button secondary" type="button">Boa → resíduo · corrigir última boa</button>
+        <div class="counter-actions">
+          <button id="minusButton" class="icon-button" aria-label="Retirar uma unidade" hidden>−</button>
+          <button id="resetButton" class="icon-button" aria-label="Zerar contador">↻</button>
+          <button id="plusButton" class="icon-button" aria-label="Adicionar uma unidade" hidden>+</button>
+        </div>
+        <div class="metrics"><div><span>Ritmo</span><strong id="rateValue">0,0/min</strong></div><div><span>Última retirada</span><strong id="lastEvent">—</strong></div></div>
+      </section>
+
+      <section class="history-card card">
+        <div class="section-title"><div><span class="eyebrow">REGISTRO DA SESSÃO</span><h2>Últimas passagens</h2><p>Histórico desta sessão</p></div><button id="exportButton" class="text-button" type="button">Exportar CSV</button></div>
+        <ol id="eventList" class="event-list"><li class="empty-event">Nenhuma retirada registrada</li></ol>
+      </section>
+    </aside>
+
+      <section class="control-card card">
+        <div class="section-title"><div><span class="eyebrow">03 / PARÂMETROS</span><h2>Ajustes de leitura</h2><p>Detector por contraste · experimental</p></div><label class="switch"><input id="armedSwitch" type="checkbox" aria-label="Ativar contagem automática" /><span></span></label></div>
+
+        <div class="settings-grid">
+        <div class="field"><div><label for="sensitivity">Sensibilidade</label><output id="sensitivityValue">55%</output></div><input id="sensitivity" type="range" min="10" max="95" value="55" /></div>
+        <div class="field"><div><label for="linePosition">Posição da linha</label><output id="lineValue">36%</output></div><input id="linePosition" type="range" min="20" max="85" value="36" /></div>
+        <div class="select-field"><label for="direction">Direção até a pilha</label><select id="direction"><option value="down" selected>Máquina → pilha (↓)</option><option value="up">Máquina → pilha (↑)</option></select></div>
+        </div>
+        <details>
+          <summary>Ajustar área de análise</summary>
+          <div class="area-grid">
+            <label>Esquerda<input id="roiX" type="range" min="0" max="60" value="12" /></label>
+            <label>Topo<input id="roiY" type="range" min="0" max="60" value="13" /></label>
+            <label>Largura<input id="roiW" type="range" min="25" max="100" value="76" /></label>
+            <label>Altura<input id="roiH" type="range" min="25" max="100" value="74" /></label>
+            <label>Busca antes da linha<input id="searchSpan" type="range" min="10" max="30" value="20" /></label>
+          </div>
+        </details>
+        <div class="preset-grid">
+        <button id="frontalPresetButton" class="button calibrate" type="button">Ajuste frontal · vídeo novo (52 s)</button>
+        <button id="calibrateButton" class="button calibrate" type="button">Ajuste lateral · vídeo anterior (10 s)</button>
+        </div>
+        <p class="tip">A saída é somada imediatamente ao cruzar a linha. Depois, o mesmo registro é confirmado como peça boa ou resíduo, sem aumentar o total novamente. Registros antigos foram preservados. Classificação experimental por movimento enquanto o modelo treinado não estiver instalado. Mantenha a câmera fixa e ambas as saídas visíveis.</p>
+      </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="edge-detector.js?v=13"></script>
+  <script src="destination-detector.js?v=17"></script>
+  <script src="station.js?v=5"></script>
+  <script src="app.js?v=31"></script>
+</body>
+</html>

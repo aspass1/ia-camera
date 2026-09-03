@@ -1,0 +1,15 @@
+html,body{max-width:100%;overflow-x:hidden}body{min-width:0;min-height:100dvh}
+@media(max-width:720px){
+  .topbar{height:58px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .logo{width:34px;height:34px;border-radius:10px}.brand span{display:none}.badge{padding:7px 9px}
+  .workspace{width:100%;padding:10px max(10px,env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+  .card{width:100%;margin-bottom:10px;border-radius:13px}.card-head{min-height:0;padding:12px;align-items:stretch;gap:10px}.card-head p{line-height:1.4}
+  .source-controls{display:grid;grid-template-columns:1fr 1fr;gap:7px}.source-controls select{grid-column:1/-1;width:100%;min-width:0}.source-controls .button{width:100%;min-width:0;padding:0 8px}
+  .stage{width:100%;min-height:0;aspect-ratio:3/4}.stage video{object-fit:contain}.statusbar{padding:8px 12px}
+  .counter-card{padding:16px}.counter-top output{font-size:56px}.control-card,.history-card{padding:15px}
+  .select-field{align-items:flex-start;flex-direction:column;gap:7px}.select-field select{width:100%;max-width:none}.area-grid{grid-template-columns:1fr}
+  .event-list li{grid-template-columns:28px minmax(0,1fr)}.event-list li time{grid-column:2}
+  .toast{width:calc(100% - 24px);text-align:center;bottom:calc(12px + env(safe-area-inset-bottom))}
+}
+@media(max-width:380px){.source-controls{grid-template-columns:1fr}.source-controls select{grid-column:auto}.counter-top output{font-size:50px}.card-head h1{font-size:14px}}
+@media(max-width:720px) and (orientation:landscape){.stage{aspect-ratio:16/9;max-height:72vh}.workspace{padding-bottom:10px}}
