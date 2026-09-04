@@ -4,7 +4,7 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "/linhacount/index.html",
+      "destination": "/linhacount/dashboard.html",
       "permanent": false
     }
   ]
