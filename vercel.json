@@ -1,0 +1,10 @@
+{
+  "buildCommand": "echo Static site ready",
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/linhacount/index.html"
+    }
+  ]
+}
