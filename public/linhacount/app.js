@@ -45,6 +45,8 @@
   let taughtFired = new Set();
   let taughtSourceId = null;
   let flowRun = 0;
+  let cycleSamples = [];
+  let cycleLastCount = -Infinity;
 
   const settings = {
     sensitivity: 55,
@@ -230,6 +232,12 @@
   async function openVideoFile(file) {
     stopSource();
     flowRun++;
+    count=0;
+    categories={good:0,residue:0,pending:0,review:0,legacy:0};
+    events=[];
+    sessionStartedAt=null;
+    renderCount();
+    renderEvents();
     updateOverlay();
     persist();
     fileUrl = URL.createObjectURL(file);
@@ -272,6 +280,8 @@
     destinationDetector.reset();
     previousGray = null;
     frameCounter = 0;
+    cycleSamples = [];
+    cycleLastCount = -Infinity;
     fpsStartedAt = performance.now();
     cancelAnimationFrame(rafId);
     if (videoFrameId && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(videoFrameId);
@@ -291,9 +301,14 @@
         const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
         const gray = new Uint8Array(canvas.width * canvas.height);
         let difference = 0;
+        let changedX = 0, changedPixels = 0;
         for (let i=0;i<gray.length;i++) {
           gray[i] = (rgba[i*4]*54 + rgba[i*4+1]*183 + rgba[i*4+2]*19) >> 8;
-          if (previousGray) difference += Math.abs(gray[i]-previousGray[i]);
+          if (previousGray) {
+            const delta=Math.abs(gray[i]-previousGray[i]);
+            difference += delta;
+            if(delta>24){changedX += i%canvas.width;changedPixels++;}
+          }
         }
         const result = edgeDetector.update(mediaTime, gray, canvas.width, canvas.height, settings.line/100, $('direction').value, settings.sensitivity, settings.searchSpan/100);
         const destination = destinationDetector.update(mediaTime,gray,canvas.width,canvas.height,result,settings.line/100,$('direction').value);
@@ -308,6 +323,27 @@
           trackerBox.classList.toggle('crossed', destination.phase === 'discarding');
         } else trackerBox.classList.remove('visible');
         if (armedSwitch.checked) {
+          if(fileUrl){
+            const motion=difference/gray.length;
+            const centerX=changedPixels?changedX/changedPixels/canvas.width:.5;
+            cycleSamples.push({time:mediaTime,motion,x:centerX});
+            if(cycleSamples.length>31)cycleSamples.shift();
+            if(cycleSamples.length>=21&&mediaTime>1500){
+              const candidate=cycleSamples[cycleSamples.length-8];
+              const local=cycleSamples.slice(-15);
+              const values=cycleSamples.map(sample=>sample.motion).slice().sort((a,b)=>a-b);
+              const baseline=values[Math.floor(values.length*.25)]||0;
+              const isPeak=local.every(sample=>candidate.motion>=sample.motion);
+              // A retirada completa gera picos para a mão, o tecido e a
+              // acomodação. Feche o ciclo antes de aceitar outra contagem.
+              if(isPeak&&candidate.motion>baseline+1.35&&candidate.motion>4.0&&candidate.time-cycleLastCount>3400){
+                cycleLastCount=candidate.time;
+                const kind=candidate.x<.18||candidate.x>.82?'residue':'good';
+                addCount(`${kind==='good'?'Peça boa':'Resíduo'} · ciclo ${(candidate.time/1000).toFixed(2)} s`,kind);
+              }
+            }
+            setStatus('Analisando ciclos completos do vídeo',true);
+          } else {
           // A long sheet can expose more than one visual edge. It is still one
           // physical withdrawal until its destination is decided, so never open
           // a second flow while one is pending.
@@ -318,6 +354,7 @@
           if(destination.event && (destination.event.kind==='good'||destination.event.kind==='residue'))finalizeFlow(destination.event.kind,`${phaseNames[destination.event.kind]} · ${(mediaTime/1000).toFixed(2)} s`);
           else if(destination.event?.kind==='review')finalizeFlow('residue',`Não permaneceu na pilha · resíduo · ${(mediaTime/1000).toFixed(2)} s`);
           else if(!result.count)setStatus(phaseNames[destination.phase]||'Analisando saída da máquina',true);
+          }
         }
         $('motionLabel').textContent = result.edge ? `Contraste da borda ${result.edge.strength.toFixed(0)}` : 'Nenhuma borda na faixa';
         updateQuality(difference/gray.length);
@@ -337,6 +374,8 @@
   function resetDetector() {
     edgeDetector.reset();
     destinationDetector.reset();
+    cycleSamples=[];
+    cycleLastCount=-Infinity;
     trackerBox.classList.remove('visible', 'crossed');
   }
 

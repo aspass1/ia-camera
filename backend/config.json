@@ -1,0 +1,16 @@
+{
+  "server": "http://127.0.0.1:8766",
+  "machines": {
+    "1": {
+      "source": 0,
+      "model": "models/tecido-best.pt",
+      "confidence": 0.35,
+      "min_area": 3500,
+      "trigger": [0.18, 0.12, 0.82, 0.48],
+      "good_zone": [0.25, 0.48, 0.75, 0.98],
+      "residue_left": [0.0, 0.22, 0.24, 1.0],
+      "residue_right": [0.76, 0.22, 1.0, 1.0]
+    }
+  }
+}
+

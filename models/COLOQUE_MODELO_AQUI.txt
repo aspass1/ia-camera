@@ -1,0 +1,3 @@
+O modelo treinado deve se chamar tecido-best.pt e ficar nesta pasta.
+Sem ele, o LinhaCount usa provisoriamente detecção por movimento e rastreamento de centro.
+

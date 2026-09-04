@@ -29,7 +29,7 @@
   function openCapture(id){
     if(!frames.has(id)) {
       const card=$(`machine-${id}`);
-      const frame=document.createElement('iframe');frame.className='capture inline-capture';frame.title=`Captura da máquina ${id}`;frame.allow='camera; autoplay';frame.src=`index.html?machine=${id}&embedded=1&v=32`;card.querySelector('.state').after(frame);frames.set(id,frame);
+      const frame=document.createElement('iframe');frame.className='capture inline-capture';frame.title=`Captura da máquina ${id}`;frame.allow='camera; autoplay';frame.src=`index.html?machine=${id}&embedded=1&v=34`;card.querySelector('.state').after(frame);frames.set(id,frame);
       frame.addEventListener('load',()=>frame.contentWindow.postMessage({type:'capture-view',expanded:expanded===id},location.origin));
       card.querySelector('button').textContent='Ver câmera';
     }

@@ -1,0 +1,21 @@
+LINHACOUNT - VERSAO PYTHON
+==========================
+
+1. Execute INSTALAR IA.cmd uma vez.
+2. Execute INICIAR LINHACOUNT.cmd para abrir o painel e o banco local.
+3. Deixe o DroidCam aberto; em backend\config.json, source 0 e a primeira camera.
+4. Execute INICIAR IA MAQUINA 01.cmd.
+5. Na janela da camera: amarelo = gatilho, verde = pilha boa, vermelho = residuo.
+6. Pressione Q ou Esc para encerrar a camera.
+
+REGRAS
+- A mesma identidade conta uma unica vez.
+- Passou pelo gatilho e chegou a pilha central: +1 boa.
+- Passou pelo gatilho e saiu por qualquer lateral: +1 residuo.
+- Se models\tecido-best.pt existir, usa YOLO treinado.
+- Sem esse modelo, inicia em modo provisório por movimento.
+
+IMPORTANTE
+O sistema esta funcional, mas precisao industrial depende do modelo tecido-best.pt
+treinado com imagens reais marcadas. Ajuste as quatro zonas em backend\config.json
+conforme o enquadramento definitivo de cada maquina.

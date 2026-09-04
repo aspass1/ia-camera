@@ -1,0 +1,3 @@
+Para treinar o detector YOLO, exporte imagens marcadas no formato YOLO para esta pasta.
+O arquivo dataset\data.yaml deve apontar para train/images, val/images e informar a classe tecido.
+Depois execute: .venv\Scripts\python.exe backend\train.py
