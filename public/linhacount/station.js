@@ -5,9 +5,9 @@
   if(embedded){
     document.body.classList.add('embedded-station');
     const settings=document.querySelector('.control-card');
-    const details=document.createElement('details');details.className='embedded-settings';
+    const details=document.createElement('details');details.className='embedded-settings';details.hidden=settings.hidden;
     const summary=document.createElement('summary');summary.textContent='Ajustes de leitura';details.append(summary);settings.before(details);details.append(settings);
-    document.querySelector('.counter-top label').textContent='Peças boas · local / teste';
+    document.querySelector('.counter-top label').textContent='Peças classificadas nesta sessão';
     const sendHeight=()=>parent.postMessage({type:'capture-height',machine,height:Math.ceil(document.body.getBoundingClientRect().height)+4},location.origin);
     window.addEventListener('message',event=>{
       if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='capture-view')return;
@@ -25,6 +25,8 @@
   window.ProductionStation={
     preview(value){
       if(value.mode==='test')notice.textContent=`Máquina ${machine} · VÍDEO DE TESTE. Contador também exibido no painel, separado da produção real.`;
+      if(value.cameraPilot)notice.textContent=`Máquina ${machine} · TESTE AO VIVO. Contagem separada da produção real.`;
+      if(value.mode==='live')notice.textContent=`Máquina ${machine} · contagem automática salva no painel. Modelo em validação ao vivo.`;
       if(embedded)parent.postMessage({type:'capture-reading',machine,...value},location.origin);
     },
     async claim(){await request({action:'claim'});active=true;lastFrame=0;notice.textContent=`Máquina ${machine} · captura autorizada. Aguardando imagem.`;},

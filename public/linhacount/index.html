@@ -25,11 +25,19 @@
           <select id="cameraSelect" aria-label="Selecionar câmera"><option value="">Câmera padrão</option></select>
           <button id="fileButton" class="button secondary" type="button">Testar vídeo</button>
           <input id="fileInput" type="file" accept="video/*" hidden />
+          <label style="font-size:14px"><input id="continuousTest" type="checkbox" /> Teste contínuo experimental</label>
+          <label style="font-size:14px">Enquadramento
+            <select id="detectorView" aria-label="Enquadramento da detecção">
+              <option value="original">Original — câmera próxima</option>
+              <option value="wide">Amplo — mesa inteira (teste)</option>
+            </select>
+          </label>
           <button id="flipCameraButton" class="button secondary camera-flip" type="button" hidden>Trocar câmera</button>
           <button id="cameraButton" class="button primary" type="button">Conectar câmera</button>
         </div>
       </div>
 
+      <label style="display:block;padding:12px 20px;font-size:16px"><input id="recordProduction" type="checkbox" checked /> Registrar câmera ao vivo nesta máquina · vídeos continuam somente teste</label>
       <div id="stage" class="stage">
         <video id="video" autoplay muted playsinline></video>
         <div id="emptyState" class="empty-state">
@@ -56,7 +64,7 @@
     <aside class="sidebar">
       <section class="counter-card card">
         <span class="eyebrow">02 / PRODUÇÃO</span>
-        <div class="counter-top"><div><label>Saídas da máquina · fluxo</label><output id="countValue">000</output><span class="counter-unit">soma assim que a peça cruza a linha</span></div><div id="confidenceRing" class="confidence-ring" title="Qualidade do sinal">—</div></div>
+        <div class="counter-top"><div><label>Peças classificadas nesta sessão</label><output id="countValue">000</output><span class="counter-unit">peças boas + resíduos identificados</span></div><div id="confidenceRing" class="confidence-ring" title="Qualidade do sinal">—</div></div>
         <div class="classification-totals"><div><span>Peças boas</span><strong id="goodValue">0</strong></div><div><span>Resíduos</span><strong id="residueValue">0</strong></div></div>
         <button id="residueButton" class="button secondary" type="button">Boa → resíduo · corrigir última boa</button>
         <div class="counter-actions">
@@ -73,7 +81,7 @@
       </section>
     </aside>
 
-      <section class="control-card card">
+      <section class="control-card card" hidden>
         <div class="section-title"><div><span class="eyebrow">03 / PARÂMETROS</span><h2>Ajustes de leitura</h2><p>Detector por contraste · experimental</p></div><label class="switch"><input id="armedSwitch" type="checkbox" aria-label="Ativar contagem automática" /><span></span></label></div>
 
         <div class="settings-grid">
@@ -101,8 +109,9 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="edge-detector.js?v=13"></script>
-  <script src="destination-detector.js?v=17"></script>
-  <script src="station.js?v=5"></script>
-  <script src="app.js?v=34"></script>
+  <script src="destination-detector.js?v=37"></script>
+  <script src="station.js?v=38"></script>
+  <script src="frame-buffer.js?v=40"></script>
+  <script src="app.js?v=43"></script>
 </body>
 </html>

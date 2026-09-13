@@ -6,7 +6,6 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-start "LinhaCount servidor" /min ".venv\Scripts\python.exe" -m uvicorn backend.server:app --host 127.0.0.1 --port 8766
-timeout /t 3 /nobreak >nul
-start "" "http://127.0.0.1:8766/"
+".venv\Scripts\python.exe" backend\start_local.py
+if errorlevel 1 pause
 

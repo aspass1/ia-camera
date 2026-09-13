@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,6 +20,7 @@ DATA.mkdir(exist_ok=True)
 DB = DATA / "linhacount.db"
 
 
+@contextmanager
 def connection():
     db = sqlite3.connect(DB)
     db.row_factory = sqlite3.Row
@@ -34,7 +36,11 @@ def connection():
         );
         """
     )
-    return db
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
 
 
 class AIEvent(BaseModel):
@@ -55,7 +61,7 @@ def root():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "python": True, "time": int(time.time() * 1000)}
+    return {"ok": True, "python": True, "model": "destinos-3-residuos-v1", "time": int(time.time() * 1000)}
 
 
 @app.post("/api/ai/event")
@@ -157,10 +163,14 @@ def operations(date: str):
             "hourGood": int(total["hourGood"] or 0) if total else 0,
             "review": 0, "legacy": 0,
             "status": "working" if connected else "unknown",
-            "working": 0, "idle": 0, "unknown": 0,
+            "working": None, "idle": None, "unknown": None,
             "threshold": 30000, "learned": False,
         })
     return {"date": date, "now": now, "machines": machines}
 
 
+from .video_test_api import router as video_test_router
+app.include_router(video_test_router)
+from .live_model_api import router as live_model_router
+app.include_router(live_model_router)
 app.mount("/", StaticFiles(directory=PUBLIC, html=True), name="public")

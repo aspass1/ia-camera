@@ -1,8 +1,8 @@
 (() => {
   const $=id=>document.getElementById(id), frames=new Map(), readings=new Map(); let data=null, busy=false, expanded=null;
   const today=()=>new Date(Date.now()-10800000).toISOString().slice(0,10);
-  const duration=ms=>{const s=Math.floor(ms/1000);return `${Math.floor(s/3600)}h ${String(Math.floor(s/60)%60).padStart(2,'0')}m`;};
-  const names={working:'Produzindo',idle:'Sem produção',learning:'Aguardando primeira peça',unknown:'Sem leitura / não conectada'};
+  const duration=ms=>{if(ms==null)return '—';const s=Math.floor(ms/1000);return `${Math.floor(s/3600)}h ${String(Math.floor(s/60)%60).padStart(2,'0')}m`;};
+  const names={working:'Câmera com leitura',idle:'Sem produção',learning:'Aguardando primeira peça',unknown:'Sem leitura / não conectada'};
   $('date').value=today();
   for(let id=1;id<=27;id++) {
     const card=document.createElement('article');card.className='machine';card.id=`machine-${id}`;
@@ -18,18 +18,25 @@
       card.querySelector('.unit').textContent='boas no teste · não é produção';
       const daily=card.querySelector('.real-daily');daily.hidden=false;daily.textContent=`Dia real: ${actual?.good??'—'} boas / ${actual?.residue??'—'} resíduos. Boas nesta hora e tempos abaixo são reais.`;
       card.querySelector('.state').textContent=reading.ended?'Teste finalizado':reading.paused?'Teste pausado':'Vídeo de teste em reprodução';
+      if(reading.cameraPilot)card.querySelector('.state').textContent=reading.paused?'Teste ao vivo pausado':reading.reference?'Teste ao vivo · IA':'Teste ao vivo · sem referência';
       card.querySelector('.state').className='state learning';
     }else{
       card.querySelector('.qty').textContent=actual?.good??'—';
       card.querySelector('.residue').textContent=actual?.residue??'—';
       card.querySelector('.unit').textContent='peças boas no dia';card.querySelector('.real-daily').hidden=true;
       if(actual){card.querySelector('.state').textContent=names[actual.status];card.querySelector('.state').className='state '+actual.status;}
+      if(reading?.mode==='live'){
+        card.querySelector('.state').textContent=reading.paused?'Leitura pausada':reading.reference?'IA ao vivo · salvando produção':'Sem referência · confira a câmera';
+      }
     }
+    const tests=[...readings.values()].filter(r=>r.mode==='test');
+    $('testSummary').hidden=!tests.length;
+    $('testSummary').textContent=`TESTES NESTA ABA · ${tests.reduce((n,r)=>n+(r.good||0),0)} boas · ${tests.reduce((n,r)=>n+(r.residue||0),0)} resíduos. Não incluídos na produção do dia.`;
   }
   function openCapture(id){
     if(!frames.has(id)) {
       const card=$(`machine-${id}`);
-      const frame=document.createElement('iframe');frame.className='capture inline-capture';frame.title=`Captura da máquina ${id}`;frame.allow='camera; autoplay';frame.src=`index.html?machine=${id}&embedded=1&v=34`;card.querySelector('.state').after(frame);frames.set(id,frame);
+      const frame=document.createElement('iframe');frame.className='capture inline-capture';frame.title=`Captura da máquina ${id}`;frame.allow='camera; autoplay';frame.src=`index.html?machine=${id}&embedded=1&v=38`;card.querySelector('.state').after(frame);frames.set(id,frame);
       frame.addEventListener('load',()=>frame.contentWindow.postMessage({type:'capture-view',expanded:expanded===id},location.origin));
       card.querySelector('button').textContent='Ver câmera';
     }
@@ -67,13 +74,13 @@
       const response=await fetch(`/api/operations?date=${encodeURIComponent($('date').value)}`);if(!response.ok)throw Error('Registro indisponível');data=await response.json();
       $('connection').textContent='Registro conectado · '+new Date(data.now).toLocaleTimeString('pt-BR');$('connection').classList.remove('error');
       const sum=key=>data.machines.reduce((n,m)=>n+(m[key]||0),0);
-      $('total').textContent=sum('good').toLocaleString('pt-BR');$('residueTotal').textContent=sum('residue');$('hour').textContent=data.date===today()?sum('hourGood').toLocaleString('pt-BR'):'—';$('running').textContent=data.machines.filter(m=>m.status==='working').length+' / 27';$('work').textContent=duration(sum('working'));$('idle').textContent=duration(sum('idle'));
-      for(const m of data.machines){const el=$(`machine-${m.id}`);el.dataset.state=m.status;const set=(cls,value)=>el.querySelector('.'+cls).textContent=value;set('state',names[m.status]);el.querySelector('.state').className='state '+m.status;set('qty',m.good);set('residue',m.residue??0);set('hour',data.date===today()?m.hourGood:'—');set('working-time',duration(m.working));set('idle-time',duration(m.idle));set('unknown-time',duration(m.unknown));set('limit',`Parada após ${Math.round(m.threshold/1000)} s sem peças · ${m.learned?'ciclo aprendido':'limite inicial'}`);}
+      $('total').textContent=sum('good').toLocaleString('pt-BR');$('residueTotal').textContent=sum('residue');$('hour').textContent=data.date===today()?sum('hourGood').toLocaleString('pt-BR'):'—';$('running').textContent=data.machines.filter(m=>m.status==='working').length+' / 27';$('work').textContent='—';$('idle').textContent='—';
+      for(const m of data.machines){const el=$(`machine-${m.id}`);el.dataset.state=m.status;const set=(cls,value)=>el.querySelector('.'+cls).textContent=value;set('state',names[m.status]);el.querySelector('.state').className='state '+m.status;set('qty',m.good);set('residue',m.residue??0);set('hour',data.date===today()?m.hourGood:'—');set('working-time',duration(m.working));set('idle-time',duration(m.idle));set('unknown-time',duration(m.unknown));set('limit','Modelo por destino · confirme o enquadramento ao vivo');}
       readings.forEach((_,id)=>showReading(id));
     }catch(e){$('connection').textContent='Sem conexão com o registro — dados abaixo podem estar desatualizados';$('connection').classList.add('error');}finally{busy=false;}
   }
   $('date').onchange=refresh;
   $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{$('connection').textContent='Tela cheia indisponível neste navegador';}};
-  $('export').onclick=()=>{if(!data)return;const rows=['dia;maquina;boas;residuos;revisar;anterior_sem_classe;producao_segundos;parada_segundos;sem_leitura_segundos',...data.machines.map(m=>`${data.date};${m.id};${m.good};${m.residue};${m.review};${m.legacy};${Math.floor(m.working/1000)};${Math.floor(m.idle/1000)};${Math.floor(m.unknown/1000)}`)];const url=URL.createObjectURL(new Blob(['\ufeff'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`producao-${data.date}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  $('export').onclick=()=>{if(!data)return;const rows=['dia;maquina;boas;residuos',...data.machines.map(m=>`${data.date};${m.id};${m.good};${m.residue}`)];const url=URL.createObjectURL(new Blob(['\ufeff'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`producao-${data.date}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   refresh();setInterval(refresh,2000);
 })();

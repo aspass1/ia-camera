@@ -45,6 +45,14 @@
   let taughtFired = new Set();
   let taughtSourceId = null;
   let flowRun = 0;
+  let modelReport=null;
+  let modelRequest=null;
+  let liveModelSession=null;
+  let liveRecording=false;
+  let liveReference=false;
+  let continuousVideo=false;
+  let videoSeeked=false;
+  let captureStop=null;
   let cycleSamples = [];
   let cycleLastCount = -Infinity;
 
@@ -154,6 +162,16 @@
   }
 
   function stopSource() {
+    captureStop?.();captureStop=null;
+    flowRun++;
+    if(liveModelSession)fetch('/api/live-model/'+liveModelSession,{method:'DELETE',keepalive:true}).catch(()=>{});
+    liveModelSession=null;
+    liveRecording=false;liveReference=false;
+    continuousVideo=false;videoSeeked=false;
+    $('recordProduction').disabled=false;
+    modelRequest?.abort();modelRequest=null;modelReport=null;
+    area.hidden=false;
+    if($('modelTestNotice'))$('modelTestNotice').hidden=true;
     window.ProductionStation?.stop();
     frameTicket++;
     clearTimeout(frameWatchdog);
@@ -188,17 +206,16 @@
     }
     try {
       setStatus('Solicitando acesso à câmera…', true);
-      await window.ProductionStation?.claim();
       const selected = cameraSelect.value;
       stream = await navigator.mediaDevices.getUserMedia({
         video: selected ? { deviceId: { exact: selected }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : { facingMode: { ideal: preferredFacingMode }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
         audio: false,
       });
       video.srcObject = stream;
+      stream.getVideoTracks()[0]?.addEventListener('ended',()=>{stopSource();setStatus('Câmera desconectada — leitura interrompida');});
       await video.play();
       await listCameras();
       const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId;
-      if (window.ProductionStation) await window.ProductionStation.bind(activeId || selected || 'default-camera');
       if (activeId) cameraSelect.value = activeId;
       setConnected(true);
       const facing = stream.getVideoTracks()[0]?.getSettings().facingMode;
@@ -206,12 +223,9 @@
       armedSwitch.checked = true;
       video.controls = false;
       setStatus('Câmera ativa — monitorando a linha de saída', true);
-      beginAnalysis();
+      await beginLiveModel();
     } catch (error) {
-      window.ProductionStation?.stop();
-      stream?.getTracks().forEach(track => track.stop());
-      stream = null;
-      setConnected(false);
+      stopSource();
       const denied = error?.name === 'NotAllowedError';
       setStatus(denied ? 'Permissão da câmera negada' : 'Não foi possível abrir a câmera');
       showToast(denied ? 'Libere a câmera nas permissões do navegador' : (error.message || 'Confirme se o DroidCam está conectado'));
@@ -221,38 +235,165 @@
   async function flipCamera() {
     if (!stream) return;
     preferredFacingMode = preferredFacingMode === 'environment' ? 'user' : 'environment';
-    stream.getTracks().forEach((track) => track.stop());
-    stream = null;
-    video.srcObject = null;
+    stopSource();
     cameraSelect.value = '';
     setConnected(false);
     await startCamera();
   }
 
   async function openVideoFile(file) {
+    if($('continuousTest').checked)return openContinuousVideo(file);
     stopSource();
-    flowRun++;
-    count=0;
-    categories={good:0,residue:0,pending:0,review:0,legacy:0};
-    events=[];
-    sessionStartedAt=null;
-    renderCount();
-    renderEvents();
-    updateOverlay();
-    persist();
-    fileUrl = URL.createObjectURL(file);
-    video.src = fileUrl;
-    video.loop = false;
-    video.controls = true;
-    armedSwitch.checked = true;
-    // Treino serve para gerar o modelo, nunca para repetir uma contagem.
-    // Esta tela sempre executa a detecção visual automática.
-    taughtExamples=[]; taughtSourceId=null;
-    beginAnalysis();
-    await video.play();
-    setConnected(true, 'Vídeo de teste');
-    setStatus('Analisando vídeo gravado — perfil de tecido ativo', true);
+    const run=++flowRun;
+    categories={good:0,residue:0,pending:0,review:0,legacy:0};count=0;events=[];sessionStartedAt=Date.now();
+    fileUrl=URL.createObjectURL(file);video.src=fileUrl;video.loop=false;video.controls=true;
+    renderCount();renderEvents();setConnected(true,'Vídeo de teste');
+    let notice=$('modelTestNotice');
+    if(!notice){notice=document.createElement('p');notice.id='modelTestNotice';notice.style.cssText='padding:12px;color:#ffd38a;background:#292318';stage.after(notice);}
+    notice.hidden=false;notice.textContent='Analisando o arquivo completo. Aguarde; não altera produção.';
+    modelRequest=new AbortController();
+    try{
+      const response=await fetch('/api/test-video?view='+encodeURIComponent($('detectorView').value),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file,signal:modelRequest.signal});
+      const data=await response.json();if(!response.ok)throw Error(data.detail||'Falha na análise');
+      if(run!==flowRun)return;
+      modelReport=data;area.hidden=true;renderModelTest();await video.play();
+    }catch(error){if(run!==flowRun||error.name==='AbortError')return;notice.textContent=error.message;setStatus('Análise não concluída');}
   }
+  async function openContinuousVideo(file) {
+    stopSource();
+    const run=++flowRun;
+    count=0; categories={good:0,residue:0,pending:0,review:0,legacy:0};
+    events=[]; sessionStartedAt=Date.now();
+    fileUrl=URL.createObjectURL(file); video.src=fileUrl; video.loop=false; video.controls=true;
+    renderCount();renderEvents();
+    setConnected(true,'Vídeo de teste · modelo Python');
+    continuousVideo=true;
+    armedSwitch.checked=true;
+    setStatus('Iniciando leitura contínua…',true);
+    let notice=$('modelTestNotice');
+    if(!notice){notice=document.createElement('p');notice.id='modelTestNotice';notice.style.cssText='padding:12px;color:#ffd38a;background:#292318';stage.after(notice);}
+    notice.hidden=false;notice.textContent='Teste contínuo: conta enquanto o vídeo roda, sem análise antecipada e sem alterar produção.';
+    modelRequest=new AbortController();
+    try {
+      await video.play();
+      if(run!==flowRun||!fileUrl)return;
+      video.pause();
+      videoSeeked=false;
+      await beginLiveModel(true);
+    } catch(error){
+      if(error.name==='AbortError'||run!==flowRun)return;
+      notice.textContent='Não foi possível processar: '+error.message;
+      setStatus('Teste indisponível — confira o servidor Python',false);
+    }
+  }
+  async function beginLiveModel(fileTest=false){
+    const run=++flowRun;
+    const production=!fileTest&&$('recordProduction').checked&&machineId>=1&&machineId<=27;
+    const response=await fetch('/api/live-model',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({machine:machineId>=1&&machineId<=27?machineId:1,mode:production?'camera':'test',device:cameraSelect.value,view:$('detectorView').value}),signal:AbortSignal.timeout(5000)});
+    const body=await response.json();
+    if(!response.ok)throw Error(body.detail||'Modelo Python indisponível');
+    if(run!==flowRun){fetch('/api/live-model/'+body.session,{method:'DELETE'}).catch(()=>{});return;}
+    liveModelSession=body.session;
+    liveRecording=body.mode==='camera';$('recordProduction').disabled=true;
+    categories={good:0,residue:0,pending:0,review:0,legacy:0};events=[];count=0;sessionStartedAt=Date.now();
+    area.hidden=true;
+    let notice=$('modelTestNotice');
+    if(!notice){notice=document.createElement('p');notice.id='modelTestNotice';notice.style.cssText='padding:12px;color:#ffd38a;background:#292318';stage.after(notice);}
+    notice.hidden=false;
+    const capture=document.createElement('canvas');
+    const scale=Math.min(1,1280/Math.max(video.videoWidth,video.videoHeight));
+    capture.width=Math.round(video.videoWidth*scale);capture.height=Math.round(video.videoHeight*scale);
+    const context=capture.getContext('2d');const start=performance.now();
+    let lastSent=-1,lastTick=performance.now(),slowFrames=0;
+    if(fileTest)await video.play();
+    const buffer=new FrameBuffer();let capturing=false,lastCaptured=-1,lastMedia=-1;
+    const sample=async()=>{
+      if(capturing||run!==flowRun||buffer.finished)return;
+      if(fileTest&&videoSeeked){buffer.fail(Error('Posição do vídeo alterada. Refaça o teste do início.'));return;}
+      if(fileTest&&video.ended){buffer.finish();return;}
+      if(!armedSwitch.checked||video.paused||video.readyState<2)return;
+      const media=video.currentTime,seconds=fileTest?media:(performance.now()-start)/1000;
+      if(media===lastMedia||seconds-lastCaptured<.095)return;
+      capturing=true;
+      try{
+        context.drawImage(video,0,0,capture.width,capture.height);
+        const blob=await new Promise(resolve=>capture.toBlob(resolve,'image/png'));
+        if(run!==flowRun)return;
+        if(!blob)throw Error('Não foi possível capturar a imagem');
+        buffer.push({seconds,blob,capturedAt:performance.now()});lastCaptured=seconds;lastMedia=media;
+      }catch(error){buffer.fail(error);}finally{capturing=false;}
+    };
+    const captureTimer=setInterval(sample,10);
+    const stopCapture=()=>{clearInterval(captureTimer);buffer.clear();};captureStop=stopCapture;
+    sample();
+    while((stream||(fileTest&&fileUrl))&&run===flowRun){
+      const tick=performance.now();
+      try{
+        if(buffer.error)throw buffer.error;
+        if(fileTest&&buffer.finished&&!buffer.items.length&&!capturing){
+          await fetch('/api/live-model/'+liveModelSession,{method:'DELETE'});
+          liveModelSession=null;
+          stopCapture();captureStop=null;
+          notice.textContent=videoSeeked?'Teste interrompido porque a posição do vídeo mudou. Selecione o arquivo novamente para contar do início.':'Teste contínuo encerrado · '+categories.good+' boas · '+categories.residue+' resíduos. Não altera produção.';
+          setStatus(videoSeeked?'Posição alterada — refaça o teste':'Teste contínuo concluído');
+          video.pause();publishPreview();return;
+        }
+        const frame=buffer.shift();
+        if(!frame){await new Promise(resolve=>setTimeout(resolve,10));continue;}
+        const {seconds,blob}=frame;
+        const gap=lastSent<0?0:seconds-lastSent;
+        if(gap>.12)slowFrames++;
+        $('frameWarning').hidden=slowFrames===0;
+        $('frameWarning').textContent='Leitura irregular: '+slowFrames+' intervalos acima de 0,12 s. Podem faltar peças ou ocorrer classificações erradas. Confira a captura antes de usar os totais.';
+        if(run!==flowRun)return;
+        let data;
+        for(let attempt=0;attempt<2;attempt++){
+          try{
+            const result=await fetch('/api/live-model/'+liveModelSession+'?seconds='+seconds,{
+              method:'POST',headers:{'Content-Type':'image/png'},body:blob,signal:AbortSignal.timeout(5000)});
+            data=await result.json();if(!result.ok){const err=Error(data.detail||'Falha na leitura');err.permanent=result.status<500;throw err;}
+            break;
+          }catch(err){if(attempt||err.permanent||run!==flowRun)throw err;}
+        }
+        if(run!==flowRun)return;
+        lastSent=seconds;
+        liveReference=data.reference_found;
+        categories={...categories,...data.counts};count=categories.good+categories.residue;
+        for(const e of data.events.filter(e=>e.kind==='good'||e.kind==='residue'))events.unshift({id:e.id,source:liveRecording?'live':'test',kind:e.kind,number:count,time:new Date(e.at).toISOString(),type:e.kind==='good'?'Peça boa':'Resíduo'});
+        events=events.slice(0,50);renderCount();renderEvents();
+        notice.textContent=(liveRecording?'REGISTRANDO NA MÁQUINA '+machineId:fileTest?'VÍDEO · LEITURA CONTÍNUA':'TESTE AO VIVO')+' · '+categories.good+' boas · '+categories.residue+' resíduos. '+(!liveRecording?'Não altera produção. ':'')+'Contagem por imagem recebida, sem resultados antecipados. '+(categories.review?'Há movimentos incompletos que não foram somados.':'');
+        const delay=(performance.now()-frame.capturedAt)/1000;
+        if(delay>.3)notice.textContent+=' Processamento atrasado '+delay.toFixed(1)+' s · '+buffer.items.length+' imagens aguardando.';
+        setStatus(liveReference?'IA contando automaticamente':'Sem referência da máquina — confira o enquadramento',liveReference);
+        $('motionLabel').textContent=liveReference?'Referência encontrada':'Referência não encontrada';
+        $('fpsLabel').textContent=Math.round(1000/Math.max(1,tick-lastTick))+' leituras/s';lastTick=tick;
+      }catch(error){
+        if(run!==flowRun)return;
+        stopSource();notice.hidden=false;notice.textContent='Leitura interrompida: '+error.message+'. Reconecte a câmera.';return;
+      }
+      // Capture owns the cadence; processing drains the queue without extra delay.
+    }
+    stopCapture();
+  }
+  function renderModelTest(){
+    if(!modelReport||!fileUrl)return;
+    const visible=modelReport.events.filter(e=>video.ended||(!e.incomplete&&video.currentTime>=(e.confirmed_seconds??(e.seconds+.6))));
+    categories={good:0,residue:0,pending:0,review:0,legacy:0};
+    events=visible.filter(e=>['good','residue'].includes(e.kind)).map((e,i)=>{
+      const kind=['good','residue'].includes(e.kind)?e.kind:'review';categories[kind]++;
+      return {id:'test-'+flowRun+'-'+i,kind,source:'test',number:i+1,
+        time:new Date(sessionStartedAt+e.seconds*1000).toISOString(),
+        type:(kind==='good'?'Boa':kind==='residue'?'Resíduo':'Revisar')+' · modelo Python · '+e.seconds.toFixed(2)+' s'};
+    }).reverse();
+    count=categories.good+categories.residue;renderCount();renderEvents();
+    const total=modelReport.candidate_counts||{};
+    $('modelTestNotice').textContent='Análise '+(modelReport.view==='wide'?'ampla':'original')+' · Total do arquivo: '+(total.good||0)+' boas e '+(total.residue||0)+' resíduos. Na reprodução: '+categories.good+' boas e '+categories.residue+' resíduos. Não altera a produção.';
+    setStatus(video.ended?'Teste finalizado · confira os destinos previstos':'Reproduzindo resultado do modelo Python',true);
+  }
+  video.addEventListener('timeupdate',renderModelTest);
+  video.addEventListener('seeked',renderModelTest);
+  video.addEventListener('ended',renderModelTest);
 
   function scheduleFrame() {
     const ticket = ++frameTicket;
@@ -323,27 +464,7 @@
           trackerBox.classList.toggle('crossed', destination.phase === 'discarding');
         } else trackerBox.classList.remove('visible');
         if (armedSwitch.checked) {
-          if(fileUrl){
-            const motion=difference/gray.length;
-            const centerX=changedPixels?changedX/changedPixels/canvas.width:.5;
-            cycleSamples.push({time:mediaTime,motion,x:centerX});
-            if(cycleSamples.length>31)cycleSamples.shift();
-            if(cycleSamples.length>=21&&mediaTime>1500){
-              const candidate=cycleSamples[cycleSamples.length-8];
-              const local=cycleSamples.slice(-15);
-              const values=cycleSamples.map(sample=>sample.motion).slice().sort((a,b)=>a-b);
-              const baseline=values[Math.floor(values.length*.25)]||0;
-              const isPeak=local.every(sample=>candidate.motion>=sample.motion);
-              // A retirada completa gera picos para a mão, o tecido e a
-              // acomodação. Feche o ciclo antes de aceitar outra contagem.
-              if(isPeak&&candidate.motion>baseline+1.35&&candidate.motion>4.0&&candidate.time-cycleLastCount>3400){
-                cycleLastCount=candidate.time;
-                const kind=candidate.x<.18||candidate.x>.82?'residue':'good';
-                addCount(`${kind==='good'?'Peça boa':'Resíduo'} · ciclo ${(candidate.time/1000).toFixed(2)} s`,kind);
-              }
-            }
-            setStatus('Analisando ciclos completos do vídeo',true);
-          } else {
+          {
           // A long sheet can expose more than one visual edge. It is still one
           // physical withdrawal until its destination is decided, so never open
           // a second flow while one is pending.
@@ -352,7 +473,7 @@
           const withdrawalStarted=result.count||(result.phase==='tracking'&&result.travel>=0.03);
           if(withdrawalStarted&&!pendingFlow)addFlow(`Saída da máquina detectada · ${(mediaTime/1000).toFixed(2)} s`);
           if(destination.event && (destination.event.kind==='good'||destination.event.kind==='residue'))finalizeFlow(destination.event.kind,`${phaseNames[destination.event.kind]} · ${(mediaTime/1000).toFixed(2)} s`);
-          else if(destination.event?.kind==='review')finalizeFlow('residue',`Não permaneceu na pilha · resíduo · ${(mediaTime/1000).toFixed(2)} s`);
+          else if(destination.event?.kind==='review')finalizeFlow('review',`Destino não confirmado · revisar · ${(mediaTime/1000).toFixed(2)} s`);
           else if(!result.count)setStatus(phaseNames[destination.phase]||'Analisando saída da máquina',true);
           }
         }
@@ -422,19 +543,20 @@
   }
 
   function finalizeFlow(kind,type,stableId=null){
-    if(kind!=='good'&&kind!=='residue')return;
+    if(!['good','residue','review'].includes(kind))return;
     const source=stream?'live':fileUrl?'test':'manual';
     const event=events.find(item=>item.kind==='pending'&&item.source===source&&item.run===flowRun&&(!stableId||item.referenceId===stableId));
     if(!event)return addCount(type,kind);
     categories.pending=Math.max(0,categories.pending-1);categories[kind]++;
     event.kind=kind;event.type=type;
-    if(stream)window.ProductionStation?.piece(kind,event.id);
+    if(stream && kind!=='review')window.ProductionStation?.piece(kind,event.id);
     renderCount();renderEvents();persist();
     const flash=$('countFlash');flash.textContent=kind==='good'?'✓ peça boa':'↗ resíduo';flash.classList.remove('show');void flash.offsetWidth;flash.classList.add('show');
-    setStatus(kind==='good'?'Saída confirmada como peça boa':'Saída classificada como resíduo — total não duplicado',true);
+    setStatus(kind==='review'?'Destino não confirmado — revisar, sem somar boa ou resíduo':kind==='good'?'Saída confirmada como peça boa':'Saída classificada como resíduo — total não duplicado',true);
   }
 
   function manualAdjust(delta) {
+    if(modelReport||liveModelSession||continuousVideo)return showToast('Contagem automática: ajustes manuais desativados nesta sessão.');
     if(stream)return showToast('Use Boa → resíduo para corrigir a produção identificada.');
     if (delta > 0) return addCount('manual');
     if (count <= 0) return;
@@ -445,6 +567,8 @@
   }
 
   function renderCount() {
+    $('residueButton').disabled=!!modelReport||!!liveModelSession||continuousVideo;
+    $('resetButton').disabled=!!modelReport||!!liveModelSession||continuousVideo;
     const flowCount=categories.good+categories.residue+categories.pending;
     countValue.textContent = String(flowCount).padStart(3, '0');
     $('goodValue').textContent=categories.good;
@@ -459,7 +583,7 @@
   }
 
   function publishPreview() {
-    window.ProductionStation?.preview({count,...categories, mode:fileUrl?'test':stream?'live':'none', paused:video.paused, ended:video.ended});
+    window.ProductionStation?.preview({count,...categories, cameraPilot:!!liveModelSession&&!liveRecording&&!continuousVideo, reference:liveReference, mode:fileUrl||(liveModelSession&&!liveRecording)?'test':stream?'live':'none', paused:video.paused||!armedSwitch.checked, ended:video.ended});
   }
 
   function renderEvents() {
@@ -492,9 +616,16 @@
   cameraSelect.addEventListener('change', () => { if (stream) { stopSource(); startCamera(); } });
   $('fileButton').addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
   fileInput.addEventListener('change', () => { const file = fileInput.files?.[0]; if (file) openVideoFile(file); });
+  $('detectorView').addEventListener('change', () => {
+    // A completed report belongs to the previous view. Reprocess the selected
+    // file instead of displaying old zero counts under the new view label.
+    const file=fileInput.files?.[0];
+    if(fileUrl && file) openVideoFile(file);
+  });
   $('plusButton').addEventListener('click', () => manualAdjust(1));
   $('minusButton').addEventListener('click', () => manualAdjust(-1));
   $('resetButton').addEventListener('click', () => {
+    if(modelReport||liveModelSession)return;
     if(correctionBusy)return showToast('Aguarde a correção terminar antes de zerar.');
     if (!count) return;
     if (confirm('Zerar o contador e iniciar um novo lote?')) {
@@ -505,6 +636,7 @@
   $('frontalPresetButton').addEventListener('click', () => useTestPosition(true));
   $('exportButton').addEventListener('click', exportCSV);
   $('residueButton').addEventListener('click',async()=>{
+    if(modelReport)return showToast('Resultado experimental do modelo; correção manual não altera esta reprodução.');
     if(correctionBusy)return;
     const source=stream?'live':fileUrl?'test':'manual';
     const event=events.find(e=>e.kind==='good'&&e.source===source&&e.id);
@@ -531,7 +663,7 @@
   video.addEventListener('waiting', () => { trackerBox.classList.remove('visible'); });
   video.addEventListener('ended', () => { trackerBox.classList.remove('visible'); replayAfterEnd = armedSwitch.checked; armedSwitch.checked = false; setStatus('Fim do vídeo — reproduza novamente para repetir o teste'); });
   video.addEventListener('play', () => { if (fileUrl && replayAfterEnd) { armedSwitch.checked = true; replayAfterEnd = false; } });
-  video.addEventListener('seeking', () => { previousGray = null; lastMediaTime = -1; resetDetector(); if(video.currentTime<1){taughtStarted.clear();taughtFired.clear();} });
+  video.addEventListener('seeking', () => { if(continuousVideo&&liveModelSession)videoSeeked=true;previousGray = null; lastMediaTime = -1; resetDetector(); if(video.currentTime<1){taughtStarted.clear();taughtFired.clear();} });
   $('direction').addEventListener('change', () => { resetDetector(); updateOverlay(); });
   video.addEventListener('loadedmetadata', updateOverlay);
   new ResizeObserver(updateOverlay).observe(stage);
@@ -542,6 +674,8 @@
     if (event.key.toLowerCase() === 'p') { armedSwitch.checked = !armedSwitch.checked; armedSwitch.dispatchEvent(new Event('change')); }
   });
   navigator.mediaDevices?.addEventListener?.('devicechange', () => listCameras().catch(() => {}));
+  window.addEventListener('pagehide',stopSource);
+  if(!(machineId>=1&&machineId<=27)){$('recordProduction').checked=false;$('recordProduction').disabled=true;}
 
   restore();
   listCameras().catch(() => {});

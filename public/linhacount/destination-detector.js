@@ -17,7 +17,7 @@
         if(this.quietSince!==null && time-this.quietSince>=600){this.locked=false;this.phase='idle';}
         return {phase:this.phase,event:null};
       }
-      if(!this.active && (signal.crossing || signal.sideExit)) {
+      if(!this.active && (signal.crossing || signal.pulling)) {
         this.active={id:++this.sequence,started:time,crossed:false,forward:this.recentForward.reduce((n,f)=>n+f.dy,0),side:0,sideFrames:0,sideDirection:0,lastEvidence:time};
         this.quietSince=null;
       }
@@ -45,7 +45,7 @@
       this.phase=discarded?'discarding':a.crossed?'settling':'pulling';
       const settled=quiet && this.quietSince!==null && time-this.quietSince>=650 && time-a.lastEvidence>=650;
       const timedOut=time-a.started>8000;
-      const completedOnMotion=a.crossed && a.forward>=.25 && a.side<.035 && time-a.lastEvidence>=1800;
+      const completedOnMotion=false; // A passing motion does not prove placement.
       if(settled || timedOut || completedOnMotion){
         // Weak lateral evidence is ambiguous, not an automatic good piece.
         // White woven fabric keeps shimmering after it reaches the pile, so a
